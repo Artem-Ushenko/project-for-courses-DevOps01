@@ -75,6 +75,6 @@ jobs:
 
 #This will create an environment variable called TF_OUTPUTS that will contain all of the outputs from your Terraform plan
 env:
-  TF_OUTPUTS: ${{ steps.terraform.outputs.* }}
+  TF_OUTPUTS: ${{ terraform.outputs.* }}
 
 
