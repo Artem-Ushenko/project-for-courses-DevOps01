@@ -22,7 +22,6 @@ jobs:
         shell: bash
     
     steps:
-
     #Checks out repository under $GITHUB_WORKSPACE, so your workflow can access it
     - name: Checkout
       uses: actions/checkout@v2
