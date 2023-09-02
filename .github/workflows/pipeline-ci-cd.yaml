@@ -35,22 +35,23 @@ jobs:
         
     #To ensure access to the AWS Cloud environment we must configure and in the runner environment.
     - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
+      run: |
+        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
+        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
+        echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
 
     #We can now configure Terraform commands
     - name: Terraform Init
       id: init
-      run: terraform init
+      run: |
+        terraform init
 
     #Checks whether the configuration has been properly formatted
     #It will throw an error if the configuration isn't properly formatted
     - name: Terraform Format
       id: fmt
-      run: terraform fmt -check
+      run: |
+        terraform fmt -check
       env:
         TF_ACTION_WORKING_DIR: .
       continue-on-error: true
@@ -58,16 +59,19 @@ jobs:
     #Validates the configuration used in the GitHub action workflow
     - name: Terraform Validate
       id: validate
-      run: terraform validate -no-color
+      run: |
+        terraform validate -no-color
 
     #Generates a Terraform plan
     - name: Terraform Plan Status
       if: steps.plan.outcome == 'failure'
-      run: exit 1
+      run: |
+        exit 1
 
     #Applies the configuration when a commit is pushed to 'main'
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: terraform apply -auto-approve
+      run: |
+        terraform apply -auto-approve
 
 
