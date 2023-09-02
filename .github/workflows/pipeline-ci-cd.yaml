@@ -73,8 +73,4 @@ jobs:
       run: |
         terraform apply -auto-approve
 
-#This will create an environment variable called TF_OUTPUTS that will contain all of the outputs from your Terraform plan
-env:
-  TF_OUTPUTS: ${{ terraform.outputs.* }}
-
 
