@@ -73,4 +73,51 @@ jobs:
       run: |
         terraform apply -auto-approve
 
+  #Deploy the LMS Docker container to the provisioned EC2 instance
+  deploy:
+      runs-on: ubuntu-latest
 
+      steps:
+        - name: Checkout Repository
+          uses: actions/checkout@v2
+        
+        - name: Set up SSH
+          uses: webfactory/ssh-agent@v0.5
+          with:
+            ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    
+        #Pull the image from Docker Hub      
+        - name: Pull Docker Image
+          run: |
+            docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+            docker pull bitnami/moodle:latest
+            
+        #Deploy Docker Container
+        - name: Deploy Docker Container
+          run: |
+            # SSH into your EC2 instance and start the Docker container
+            ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS 'docker run -d -p 80:80 bitnami/moodle:latest'
+          continue-on-error: true
+
+        #Checking if the Docker container is already running
+        - name: Check if Container is Running
+          run: |
+            CONTAINER_STATUS=$(ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS 'docker ps -q --filter "ancestor=bitnami/moodle:latest"')
+            if [ -n "$CONTAINER_STATUS" ]; then
+              echo "Container is already running. Stopping and removing it."
+              ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS "docker stop $CONTAINER_STATUS"
+              ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS "docker rm $CONTAINER_STATUS"
+            fi
+          continue-on-error: true
+        
+        #Check Container Deployment Status
+        - name: Check Container Deployment Status
+          run: |
+            DEPLOYMENT_STATUS=$(ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS 'docker ps -q --filter "ancestor=bitnami/moodle:latest"')
+            if [ -n "$DEPLOYMENT_STATUS" ]; then
+              echo "Container deployed successfully."
+            else
+              echo "Container deployment failed."
+              exit 1
+            fi
+        
