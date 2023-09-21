@@ -1,4 +1,6 @@
 name: 'Terraform Build DevOps01-Project'
+
+# This workflow will run when there is a push or a pull request to the 'main' branch.
 on:
   push:
     branches:
@@ -6,118 +8,96 @@ on:
   pull_request:
     branches:
       - "main"
-jobs:
 
-  #Determines the type of machine to run the job on
+jobs:
+  # Terraform job for setting up AWS resources
   terraform:
     name: 'TF GitHub Actions DevOps01-Project'
-    runs-on: ubuntu-latest
-    
-    #The environment that the job references
+    runs-on: ubuntu-latest # Specifies the runner environment to use
     environment: production
     
-    #Define default shell and working-directory options for all run steps in a workflow
+    # Specifies default settings for the shell in all run steps in this job.
     defaults:
       run:
         shell: bash
     
     steps:
-    #Checks out repository under $GITHUB_WORKSPACE, so your workflow can access it
+    # Checks out your repository under $GITHUB_WORKSPACE, so your workflow can access it.
     - name: Checkout
       uses: actions/checkout@v2
-
-    #Is a JavaScript action that sets up Terraform CLI
+      
+    # Assume the AWS Role to perform AWS actions.
+    - name: Assume AWS Role
+      uses: aws-actions/sts-assume-role@v1
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+        role-session-name: GitHubActions
+    
+    # Sets up Terraform CLI in the runner environment.
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v1
       with:
-        terraform_version: latest
+        terraform_version: latest # Uses the latest version of Terraform
         
-    #To ensure access to the AWS Cloud environment we must configure and in the runner environment.
-    - name: Configure AWS Credentials
-      run: |
-        echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> $GITHUB_ENV
-        echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> $GITHUB_ENV
-        echo "AWS_REGION=us-east-1" >> $GITHUB_ENV
-
-    #We can now configure Terraform commands
+    # Initializes Terraform in the working directory.
     - name: Terraform Init
-      id: init
-      run: |
-        terraform init
-
-    #Checks whether the configuration has been properly formatted
-    #It will throw an error if the configuration isn't properly formatted
+      run: terraform init
+      
+    # Checks whether the configuration has been properly formatted, and fails if it’s not.
     - name: Terraform Format
-      id: fmt
-      run: |
-        terraform fmt -check
-      env:
-        TF_ACTION_WORKING_DIR: .
-      continue-on-error: true
-
-    #Validates the configuration used in the GitHub action workflow
+      run: terraform fmt -check
+      
+    # Validates the Terraform configuration in pull requests.
     - name: Terraform Validate
-      id: validate
-      run: |
-        terraform validate -no-color
+      if: github.event_name == 'pull_request'
+      run: terraform validate -no-color
 
-    #Generates a Terraform plan
+    # Generates and shows the execution plan (not executed).
+    - name: Terraform Plan
+      id: plan
+      run: terraform plan -input=false -lock=false
+      continue-on-error: true # Continues to the next step even if this step fails.
+      
+    # Checks the status of the Terraform Plan step, fails the workflow if the Plan step failed.
     - name: Terraform Plan Status
       if: steps.plan.outcome == 'failure'
       run: |
+        echo "Terraform Plan Failed."
         exit 1
-
-    #Applies the configuration when a commit is pushed to 'main'
+        
+    # Applies the Terraform configuration to AWS, creating/modifying the resources.
     - name: Terraform Apply
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      run: |
-        terraform apply -auto-approve
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push' # Only applies in push events to the 'main' branch
+      run: terraform apply -auto-approve
 
-  #Deploy the LMS Docker container to the provisioned EC2 instance
+  # Deploy job for deploying Docker container to the AWS EC2 instance
   deploy:
-      runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
 
-      steps:
-        - name: Checkout Repository
-          uses: actions/checkout@v2
+    steps:
+    # Checks out your repository under $GITHUB_WORKSPACE.
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+      
+    # Sets up the SSH key to connect to the EC2 instance.
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
         
-        - name: Set up SSH
-          uses: webfactory/ssh-agent@v0.8.0
-          with:
-            ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+    # Deploys the Docker container to the provisioned EC2 instance.
+    - name: Deploy Docker Container
+      run: |
+        ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP_ADDRESS }} 'docker run -d -p 80:80 bitnami/moodle:latest'
+      continue-on-error: true
     
-        #Pull the image from Docker Hub      
-        - name: Pull Docker Image
-          run: |
-            docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
-            docker pull bitnami/moodle:latest
-            
-        #Deploy Docker Container
-        - name: Deploy Docker Container
-          run: |
-            # SSH into your EC2 instance and start the Docker container
-            ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS 'docker run -d -p 80:80 bitnami/moodle:latest'
-          continue-on-error: true
-
-        #Checking if the Docker container is already running
-        - name: Check if Container is Running
-          run: |
-            CONTAINER_STATUS=$(ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS 'docker ps -q --filter "ancestor=bitnami/moodle:latest"')
-            if [ -n "$CONTAINER_STATUS" ]; then
-              echo "Container is already running. Stopping and removing it."
-              ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS "docker stop $CONTAINER_STATUS"
-              ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS "docker rm $CONTAINER_STATUS"
-            fi
-          continue-on-error: true
-        
-        #Check Container Deployment Status
-        - name: Check Container Deployment Status
-          run: |
-            DEPLOYMENT_STATUS=$(ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ec2-user@YOUR_EC2_IP_ADDRESS 'docker ps -q --filter "ancestor=bitnami/moodle:latest"')
-            if [ -n "$DEPLOYMENT_STATUS" ]; then
-              echo "Container deployed successfully."
-            else
-              echo "Container deployment failed."
-              exit 1
-            fi
-        
+    # Checks if the Docker container has been deployed successfully.
+    - name: Check Container Deployment Status
+      run: |
+        DEPLOYMENT_STATUS=$(ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP_ADDRESS }} 'docker ps -q --filter "ancestor=bitnami/moodle:latest"')
+        if [ -z "$DEPLOYMENT_STATUS" ]; then
+          echo "Container deployment failed."
+          exit 1
+        else
+          echo "Container deployed successfully."
+        fi
