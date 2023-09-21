@@ -85,19 +85,21 @@ jobs:
       with:
         ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
         
-    # Deploys the Docker container to the provisioned EC2 instance.
-    - name: Deploy Docker Container
-      run: |
-        ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP_ADDRESS }} 'docker run -d -p 80:80 bitnami/moodle:latest'
-      continue-on-error: true
+    - name: Pull Docker Image
+      run: docker pull bitnami/moodle:latest
     
-    # Checks if the Docker container has been deployed successfully.
-    - name: Check Container Deployment Status
+    # Check if a previous container is running
+    - name: Check Running Containers
       run: |
-        DEPLOYMENT_STATUS=$(ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP_ADDRESS }} 'docker ps -q --filter "ancestor=bitnami/moodle:latest"')
-        if [ -z "$DEPLOYMENT_STATUS" ]; then
-          echo "Container deployment failed."
-          exit 1
-        else
-          echo "Container deployed successfully."
-        fi
+        CONTAINER_ID=$(ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP_ADDRESS }} 'docker ps -q --filter "ancestor=bitnami/moodle:latest"')
+        echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+      
+    # If a container is running, stop and remove it
+    - name: Stop and Remove Running Containers
+      if: env.CONTAINER_ID != ''
+      run: |
+        ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP_ADDRESS }} "docker stop $CONTAINER_ID && docker rm $CONTAINER_ID"
+        
+    # Deploy the new container
+    - name: Deploy Docker Container
+      run: ssh -o StrictHostKeyChecking=no ec2-user@${{ secrets.EC2_IP_ADDRESS }} 'docker run -d -p 80:80 bitnami/moodle:latest'
