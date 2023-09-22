@@ -73,6 +73,7 @@ jobs:
   # Deploy job for deploying Docker container to the AWS EC2 instance
   deploy:
     runs-on: ubuntu-latest
+    needs: [terraform]
 
     steps:
     # Checks out your repository under $GITHUB_WORKSPACE.
