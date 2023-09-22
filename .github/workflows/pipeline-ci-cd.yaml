@@ -30,6 +30,7 @@ jobs:
     - name: Configure AWS Credentials by Assume Role
       uses: aws-actions/configure-aws-credentials@v4
       with:
+        aws-region: eu-central-1 # Frankfurt, Germany
         role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
         role-session-name: GitHubActions
 
